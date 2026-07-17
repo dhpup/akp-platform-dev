@@ -37,12 +37,12 @@ echo "Using repo URL: ${repo_url}"
 
 for project in "${PROJECTS[@]}"; do
   echo "==> ${project}"
-  kargo create credentials github-creds \
-    --project "${project}" \
+  kargo create repo-credentials github-creds \
+    --project="${project}" \
     --git \
-    --username "${username}" \
-    --password "${token}" \
-    --repo-url "${repo_url}"
+    --username="${username}" \
+    --password="${token}" \
+    --repo-url="${repo_url}"
 done
 
 echo ""
