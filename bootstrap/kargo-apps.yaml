@@ -17,6 +17,11 @@ spec:
       revision: HEAD
       directories:
       - path: apps/*/kargo
+      # On the very first bootstrap, these Applications can be generated
+      # before their AppProjects exist (the argocd-apps ApplicationSet
+      # creates those asynchronously). That's harmless — but requeue
+      # quickly so the retry happens in seconds, not minutes.
+      requeueAfterSeconds: 30
   template:
     metadata:
       name: 'kargo-{{path[1]}}'
