@@ -13,7 +13,7 @@ metadata:
 spec:
   generators:
   - git:
-      repoURL: https://github.com/example-org/akp-platform.git
+      repoURL: https://github.com/dhpup/akp-platform.git
       revision: HEAD
       directories:
       - path: apps/*/kargo
@@ -26,7 +26,7 @@ spec:
       # ApplicationSet above; this Application retries until it exists.
       project: '{{path[1]}}'
       source:
-        repoURL: https://github.com/example-org/akp-platform.git
+        repoURL: https://github.com/dhpup/akp-platform.git
         targetRevision: HEAD
         path: '{{path}}'
         directory:
