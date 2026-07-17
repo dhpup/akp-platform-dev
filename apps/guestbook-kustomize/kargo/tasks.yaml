@@ -1,0 +1,44 @@
+# The "update main" promotion pattern with Kustomize: every promotion is a
+# real commit to main that bumps the image tag in the stage's overlay
+# (env/<stage>/kustomization.yaml). Argo CD syncs the overlay from main, so
+# git history on main doubles as the deployment history.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: promote
+  namespace: guestbook-kustomize
+spec:
+  vars:
+  - name: repoURL
+    value: https://github.com/example-org/akp-platform.git
+  - name: image
+    value: ghcr.io/akuity/guestbook
+  steps:
+  - uses: git-clone
+    config:
+      repoURL: ${{ vars.repoURL }}
+      checkout:
+      - branch: main
+        path: ./src
+  # Bump the image tag in the stage overlay's kustomization.yaml.
+  - uses: kustomize-set-image
+    as: update-image
+    config:
+      path: ./src/apps/guestbook-kustomize/env/${{ ctx.stage }}
+      images:
+      - image: ${{ vars.image }}
+        tag: ${{ imageFrom(vars.image).Tag }}
+  - uses: git-commit
+    as: commit
+    config:
+      path: ./src
+      message: "guestbook-kustomize/${{ ctx.stage }}: promote ${{ imageFrom(vars.image).Tag }}"
+  - uses: git-push
+    config:
+      path: ./src
+      targetBranch: main
+  # Sync the Application so the bump rolls out immediately.
+  - uses: argocd-update
+    config:
+      apps:
+      - name: guestbook-kustomize-${{ ctx.stage }}

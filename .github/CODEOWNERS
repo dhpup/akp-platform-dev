@@ -1,0 +1,12 @@
+# Ownership split: anyone can open PRs anywhere, but merges into
+# platform-owned paths require platform-team review. App manifests
+# (apps/*/base, apps/*/env, apps/*/chart) are deliberately NOT listed —
+# app teams own their deployment config.
+#
+# Replace @example-org/platform-team with your real team slug.
+
+/bootstrap/          @example-org/platform-team
+/apps/*/argocd/      @example-org/platform-team
+/apps/*/kargo/       @example-org/platform-team
+/.github/            @example-org/platform-team
+/docs/               @example-org/platform-team

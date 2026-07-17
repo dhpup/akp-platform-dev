@@ -1,0 +1,134 @@
+# akp-platform — Akuity Platform Quickstart
+
+A batteries-included GitOps platform repo for the [Akuity Platform](https://akuity.io)
+(hosted Argo CD + Kargo). Fork it, run one script, apply **one** manifest, and you
+get four working promotion pipelines demonstrating the four fundamental
+GitOps delivery patterns — then grow into app monorepos, Terraform-managed
+infrastructure, and team onboarding without restructuring anything.
+
+This repo is one of three, and works standalone:
+
+| Repo | Role | Needed for the quickstart? |
+|---|---|---|
+| **akp-platform** (this repo) | All GitOps config: Argo CD apps, Kargo pipelines | ✅ yes — works alone |
+| [akp-monorepo](https://github.com/example-org/akp-monorepo) | App source code + CI that builds images | optional — [add it later](docs/add-monorepo.md) |
+| [akp-infra](https://github.com/example-org/akp-infra) | Terraform for Argo CD/Kargo instances, clusters, agents | optional — [its own journey](docs/add-infra.md) |
+
+## What you get
+
+```
+                            ┌────────────────────────────────────────────┐
+ bootstrap/platform-aoa ──► │ argocd-apps ApplicationSet (apps/*/argocd) │──► AppProjects + app ApplicationSets
+ (the ONE thing you apply)  │ kargo-apps  ApplicationSet (apps/*/kargo)  │──► Kargo Projects/Warehouses/Stages
+                            └────────────────────────────────────────────┘
+```
+
+Four self-contained example apps, one per delivery pattern (each is
+`Warehouse → dev → staging → prod`, watching the public
+`ghcr.io/akuity/guestbook` image so nothing needs to be built):
+
+| | **Promotions commit to `main`** | **Promotions push rendered `env/*` branches** |
+|---|---|---|
+| **Kustomize** | [`apps/guestbook-kustomize`](apps/guestbook-kustomize/) — bump overlay tag on main | [`apps/guestbook-rendered`](apps/guestbook-rendered/) — `kustomize build` → hydrated branch |
+| **Helm** | [`apps/guestbook-helm`](apps/guestbook-helm/) — bump values tag on main | [`apps/guestbook-helm-rendered`](apps/guestbook-helm-rendered/) — `helm template` → hydrated branch |
+
+Each app directory has a README explaining its pattern and trade-offs. The
+convention throughout (and the thing to internalize): **the `apps/<name>/`
+directory name IS the Argo CD AppProject name IS the Kargo Project name.**
+Bootstrap discovers apps by directory — onboarding never touches `bootstrap/`.
+
+## Prerequisites
+
+- An Akuity Platform organization with an **Argo CD instance** and a **Kargo
+  instance** (create them in the UI, or declaratively with
+  [akp-infra](https://github.com/example-org/akp-infra)).
+- A workload cluster connected to Argo CD (any name — the personalize script
+  asks for it).
+- The Kargo instance registered in Argo CD as a cluster destination
+  (Akuity does this when you link the instances; default name `kargo`).
+- `argocd` CLI logged in to your instance; `kargo` CLI
+  (`./download-cli.sh /usr/local/bin/kargo`) logged in
+  (`kargo login <your-kargo-url>`).
+- A GitHub account and a token with **repo write** access to your fork
+  (Kargo pushes promotion commits/branches).
+
+## Quickstart
+
+**1. Fork this repo** (keep the name `akp-platform` and keep it public —
+Argo CD and Kargo read it anonymously), then clone your fork.
+
+**2. Personalize it** — rewrites the placeholder org/cluster names in-place:
+
+```sh
+./personalize.sh
+git add -A && git commit -m "personalize" && git push
+```
+
+**3. Bootstrap** — the only manifest you ever apply by hand:
+
+```sh
+argocd app create -f bootstrap/platform-aoa.yaml
+```
+
+Within a minute or two you should see `platform-aoa`, `argocd-*`, and
+`kargo-*` Applications in Argo CD, and four Projects in the Kargo UI.
+
+**4. Give Kargo git credentials** — promotions push commits to your fork.
+Kargo credentials are namespaced per project, so add them to all four
+(the script loops for you):
+
+```sh
+./add-credentials.sh   # prompts for GitHub username + token once
+```
+
+**5. Promote!** Open the Kargo UI, pick a project (start with
+`guestbook-rendered`), and promote the freshest Freight into `dev`, then on
+through `staging` and `prod`. Then do the same in the other three projects
+and compare what each promotion did to git:
+
+- `guestbook-rendered` / `guestbook-helm-rendered` → new commits on
+  `env/<app>/<stage>` branches (plain rendered YAML)
+- `guestbook-kustomize` / `guestbook-helm` → new commits on `main`
+  (a one-line tag bump)
+
+> **Expected:** the two `*-rendered` apps show Argo CD comparison errors until
+> their first promotion — the rendered branches don't exist yet. Promoting to
+> `dev` creates them.
+
+## Choosing a pattern
+
+- **Start with `guestbook-rendered`** if you want maximum auditability: every
+  environment's exact manifests live on a plain-YAML branch.
+- **`guestbook-kustomize` / `guestbook-helm`** if you want the simplest
+  possible model: one branch, promotions are readable one-line commits.
+- **`guestbook-helm-rendered`** if you author in Helm but want hydrated
+  output — it's also the primitive behind PR-preview environments and
+  templated golden paths, so it's the best base to grow from.
+
+Delete the app directories you don't want — bootstrap prunes them
+automatically (that's the point).
+
+## Growing beyond the quickstart
+
+- **[Onboard a real app / team](docs/onboarding.md)** — the conventions and
+  checklist for adding `apps/<your-app>/`.
+- **[Add the app monorepo](docs/add-monorepo.md)** — build your own images
+  with CI and point Warehouses at them instead of the public guestbook.
+- **[Manage the platform with Terraform](docs/add-infra.md)** — the
+  [akp-infra](https://github.com/example-org/akp-infra) journey: instances,
+  clusters, and agents as code.
+
+## Repo layout
+
+```
+bootstrap/            # platform-aoa.yaml + the two discovery ApplicationSets
+apps/<name>/          # one self-contained app: argocd/ + kargo/ + manifests
+  argocd/             #   AppProject + ApplicationSet (platform-team owned)
+  kargo/              #   Project, Warehouse, Stages, PromotionTask, analysis
+  base|env|chart/     #   the app's manifests (app-team owned)
+docs/                 # onboarding + growth guides
+```
+
+`.github/CODEOWNERS` shows the intended ownership split: platform team gates
+`bootstrap/` and every app's `argocd/` + `kargo/`; app teams own their
+manifests.
