@@ -1,0 +1,156 @@
+# "Tie infra and app together": one ordered, gated promotion that provisions an
+# infra dependency (an S3 bucket) FIRST, verifies it, then deploys the app that
+# needs it. Infra + app advance as one atomic unit per environment. Uses built-in
+# tf-apply/tf-output + the shared http-probe step. Self-contained (own
+# Project/Warehouse/Task/Stages).
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: infra-app-bundle
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: infra-app-bundle
+  namespace: infra-app-bundle
+spec:
+  promotionPolicies:
+  - stage: dev
+    autoPromotionEnabled: true
+  - stage: prod
+    autoPromotionEnabled: false
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: bundle
+  namespace: infra-app-bundle
+spec:
+  subscriptions:
+  # One Warehouse watching both the IaC and the app manifests; a change to either
+  # cuts Freight for the whole bundle.
+  - git:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      branch: main
+      includePaths:
+      - examples/kargo-infra/03-vm-terraform/infra-then-app
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: infra-then-app
+  namespace: infra-app-bundle
+spec:
+  vars:
+  - name: tfvarsFile
+  - name: appName
+  - name: bucketHealthURL
+  - name: awsAccessKeyId
+    value: ""
+  - name: awsSecretAccessKey
+    value: ""
+  steps:
+  - uses: git-clone
+    config:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      checkout:
+      - branch: main
+        path: ./src
+  # 1) Provision the infra dependency (S3 bucket) via Terraform.
+  - as: provision-bucket
+    uses: tf-apply
+    config:
+      dir: ./src/examples/kargo-infra/03-vm-terraform/infra-then-app/iac
+      vars:
+      - file: ${{ vars.tfvarsFile }}
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: ${{ vars.awsAccessKeyId }}
+      - name: AWS_SECRET_ACCESS_KEY
+        value: ${{ vars.awsSecretAccessKey }}
+  # 2) Capture the bucket's health/endpoint output for the gate.
+  - as: bucket-output
+    uses: tf-output
+    config:
+      dir: ./src/examples/kargo-infra/03-vm-terraform/infra-then-app/iac
+  # 3) GATE on infra health BEFORE the app deploys. If the bucket isn't
+  #    reachable, the app deploy step never runs.
+  - as: verify-bucket
+    uses: http-probe
+    config:
+      url: ${{ vars.bucketHealthURL }}
+      expectStatus: "200"
+  # 4) Deploy the app that depends on the bucket (Argo CD sync to the Freight commit).
+  - uses: argocd-update
+    config:
+      apps:
+      - name: ${{ vars.appName }}
+        sources:
+        - repoURL: https://github.com/example-org/akp-platform-dev.git
+          desiredRevision: ${{ commitFrom('https://github.com/example-org/akp-platform-dev.git').ID }}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: infra-app-bundle
+  annotations:
+    kargo.akuity.io/color: green
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: bundle
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: infra-then-app
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars
+          - name: appName
+            value: infra-app-bundle-dev
+          - name: bucketHealthURL
+            value: https://bucket-dev-probe.internal/healthz
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-dev').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-dev').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod
+  namespace: infra-app-bundle
+  annotations:
+    kargo.akuity.io/color: red
+spec:
+  # Whole unit promotes to prod together, manually gated.
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: bundle
+    sources:
+      stages:
+      - dev
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: infra-then-app
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars
+          - name: appName
+            value: infra-app-bundle-prod
+          - name: bucketHealthURL
+            value: https://bucket-prod-probe.internal/healthz
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-prod').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-prod').secretAccessKey %}

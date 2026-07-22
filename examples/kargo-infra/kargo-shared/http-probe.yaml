@@ -1,0 +1,23 @@
+# Generic health gate: GET a URL and fail unless the status matches. Reused
+# anywhere a promotion must confirm something is reachable before proceeding.
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: CustomPromotionStep
+metadata:
+  name: http-probe
+spec:
+  image: curlimages/curl:8.11.1
+  env:
+  - name: URL
+    value: ${{ config.url }}
+  - name: EXPECT
+    value: ${{ config.expectStatus }}
+  command:
+  - sh
+  - -c
+  - |
+    set -eu
+    code=$(curl -sk -o /dev/null -w '%{http_code}' "$URL")
+    echo "GET $URL -> $code (expected $EXPECT)"
+    [ "$code" = "$EXPECT" ]
+  defaultTimeout: 2m
+  defaultErrorThreshold: 3

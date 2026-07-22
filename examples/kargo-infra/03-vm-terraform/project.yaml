@@ -1,0 +1,26 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: infra-vm
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+# dev/staging auto-apply on an IaC commit; prod and the isolated govcloud stage
+# require manual promotion (approval before the apply runs). GovCloud also uses
+# distinct credentials (see stages.yaml). TODO(verify): ProjectConfig vs
+# Project.spec location of promotionPolicies.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: infra-vm
+  namespace: infra-vm
+spec:
+  promotionPolicies:
+  - stage: dev
+    autoPromotionEnabled: true
+  - stage: staging
+    autoPromotionEnabled: true
+  - stage: prod
+    autoPromotionEnabled: false
+  - stage: govcloud
+    autoPromotionEnabled: false

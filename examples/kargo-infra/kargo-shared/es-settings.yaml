@@ -1,0 +1,31 @@
+# Apply a cluster-settings change to Elasticsearch (enable allocation, exclude a
+# node for draining, etc.). The body is passed as config so one step covers all
+# _cluster/settings mutations.
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: CustomPromotionStep
+metadata:
+  name: es-settings
+spec:
+  image: curlimages/curl:8.11.1
+  env:
+  - name: ES_ENDPOINT
+    value: ${{ config.endpoint }}
+  - name: ES_USER
+    value: ${{ config.username }}
+  - name: ES_PASS
+    value: ${{ config.password }}
+  - name: BODY
+    value: ${{ config.body }}
+  command:
+  - sh
+  - -c
+  - |
+    set -eu
+    code=$(curl -sk -o /tmp/out -w '%{http_code}' \
+      -X PUT "$ES_ENDPOINT/_cluster/settings" \
+      -u "$ES_USER:$ES_PASS" \
+      -H 'Content-Type: application/json' \
+      -d "$BODY")
+    cat /tmp/out; echo
+    [ "$code" = "200" ]
+  defaultTimeout: 2m

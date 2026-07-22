@@ -1,0 +1,31 @@
+# Block until the Elasticsearch cluster is green with no relocating shards. Uses
+# ES's own server-side waiting (wait_for_status / wait_for_no_relocating_shards),
+# so the promotion genuinely cannot proceed until the cluster is healthy. This is
+# the gate that a plain GitOps apply cannot express.
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: CustomPromotionStep
+metadata:
+  name: es-wait-green
+spec:
+  image: curlimages/curl:8.11.1
+  env:
+  - name: ES_ENDPOINT
+    value: ${{ config.endpoint }}
+  - name: ES_USER
+    value: ${{ config.username }}
+  - name: ES_PASS
+    value: ${{ config.password }}
+  - name: TIMEOUT
+    value: ${{ config.timeout }}
+  command:
+  - sh
+  - -c
+  - |
+    set -eu
+    body=$(curl -sk -u "$ES_USER:$ES_PASS" \
+      "$ES_ENDPOINT/_cluster/health?wait_for_status=green&wait_for_no_relocating_shards=true&timeout=$TIMEOUT")
+    echo "$body"
+    echo "$body" | grep -q '"status":"green"' || { echo "cluster not green"; exit 1; }
+    echo "$body" | grep -q '"relocating_shards":0' || { echo "shards still relocating"; exit 1; }
+  # Give ES's server-side wait room; the step's own timeout must exceed it.
+  defaultTimeout: 15m

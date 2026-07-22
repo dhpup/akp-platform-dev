@@ -1,0 +1,26 @@
+# Syncs the shared custom-step library to the Kargo control plane, cluster-wide.
+# Mirrors sedemo-platform/bootstrap/kargo-shared.yaml. Apply this on purpose (it
+# is NOT wired into platform-aoa, so it is never auto-deployed by the quickstart
+# bootstrap):
+#   argocd app create -f examples/kargo-infra/kargo-shared-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kargo-shared
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/example-org/akp-platform-dev.git
+    targetRevision: HEAD
+    path: examples/kargo-infra/kargo-shared
+    directory:
+      recurse: true
+  destination:
+    # The Argo CD cluster that represents the Kargo control plane (see the
+    # quickstart's kargo-apps ApplicationSet, which uses the same destination).
+    name: kargo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

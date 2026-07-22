@@ -1,0 +1,32 @@
+# Option (b): git-driven. The desired ExternalSecret manifests live in git
+# (eso/<stage>/externalsecret.yaml); a Freight commit promotes them through
+# stages, and Kargo syncs the env's Argo CD Application. External Secrets
+# Operator reconciles the actual value from the backing store — Kargo never
+# touches AWS. This is the cleaner default when ESO is available.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: write-externalsecret
+  namespace: infra-secrets
+spec:
+  vars:
+  - name: repoURL
+    value: https://github.com/example-org/akp-platform-dev.git
+  steps:
+  - uses: git-clone
+    config:
+      repoURL: ${{ vars.repoURL }}
+      checkout:
+      - commit: ${{ commitFrom('https://github.com/example-org/akp-platform-dev.git').ID }}
+        path: ./src
+  # Sync the env's ExternalSecret to the promoted commit; ESO then reconciles
+  # the value. (To have Kargo *generate* the ExternalSecret rather than track a
+  # committed one, use a template/container step here — TODO(verify) if your
+  # install ships one.)
+  - uses: argocd-update
+    config:
+      apps:
+      - name: infra-secrets-eso-${{ ctx.stage }}
+        sources:
+        - repoURL: ${{ vars.repoURL }}
+          desiredRevision: ${{ commitFrom(vars.repoURL).ID }}

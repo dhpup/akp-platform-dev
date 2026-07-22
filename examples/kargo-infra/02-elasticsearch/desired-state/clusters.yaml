@@ -1,0 +1,14 @@
+# Desired state the Warehouse watches. Bumping desiredNodes for a cluster and
+# committing is the git-driven "scale up" signal. Endpoints/counts are consumed
+# as Stage variables (see stages.yaml) rather than read from here directly —
+# this file is the human-legible record and the Freight trigger.
+clusters:
+- name: es-cluster-dev
+  endpoint: https://es-dev.internal:9200
+  desiredNodes: 3
+- name: es-cluster-prod-a
+  endpoint: https://es-prod-a.internal:9200
+  desiredNodes: 6
+- name: es-cluster-prod-b
+  endpoint: https://es-prod-b.internal:9200
+  desiredNodes: 6

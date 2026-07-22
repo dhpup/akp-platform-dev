@@ -1,0 +1,23 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: infra-secrets
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+# Auto-promote dev; staging and prod are manual (a human triggers/approves the
+# promotion in the Kargo UI or CLI). TODO(verify): ProjectConfig vs Project.spec
+# location of promotionPolicies on your install.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: infra-secrets
+  namespace: infra-secrets
+spec:
+  promotionPolicies:
+  - stage: dev
+    autoPromotionEnabled: true
+  - stage: staging
+    autoPromotionEnabled: false
+  - stage: prod
+    autoPromotionEnabled: false

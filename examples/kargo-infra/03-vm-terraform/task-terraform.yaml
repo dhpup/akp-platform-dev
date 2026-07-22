@@ -1,0 +1,62 @@
+# plan -> apply -> verify, using built-in tf-plan/tf-apply and the shared
+# http-probe custom step. Each Stage supplies its own tfvars, credentials, and
+# health URL — the same task serves dev/staging/prod AND the isolated govcloud
+# env with distinct creds, no copy-paste.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: terraform
+  namespace: infra-vm
+spec:
+  vars:
+  - name: tfvarsFile               # e.g. dev.tfvars (relative to the iac dir)
+  - name: healthURL
+  - name: awsAccessKeyId
+    value: ""
+  - name: awsSecretAccessKey
+    value: ""
+  steps:
+  - uses: git-clone
+    config:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      checkout:
+      - branch: main
+        path: ./src
+
+  # PLAN — the result is captured and surfaced in the promotion for visibility
+  # BEFORE anything is applied.
+  - as: plan
+    uses: tf-plan
+    config:
+      dir: ./src/examples/kargo-infra/03-vm-terraform/iac
+      vars:
+      - file: ${{ vars.tfvarsFile }}
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: ${{ vars.awsAccessKeyId }}
+      - name: AWS_SECRET_ACCESS_KEY
+        value: ${{ vars.awsSecretAccessKey }}
+
+  # APPLY — runs only after plan. On prod/govcloud the Stage is manual, so a
+  # human has already approved the Freight before this executes (the gate).
+  # TODO(verify): to apply the EXACT saved plan, set `plan:` to the tf-plan
+  # step's plan-file output (confirm the output field name on your version);
+  # shown here re-running with the same tfvars for simplicity.
+  - as: apply
+    uses: tf-apply
+    config:
+      dir: ./src/examples/kargo-infra/03-vm-terraform/iac
+      vars:
+      - file: ${{ vars.tfvarsFile }}
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: ${{ vars.awsAccessKeyId }}
+      - name: AWS_SECRET_ACCESS_KEY
+        value: ${{ vars.awsSecretAccessKey }}
+
+  # POST-APPLY VERIFY — confirm a VM is reachable before the stage is healthy.
+  - as: verify
+    uses: http-probe
+    config:
+      url: ${{ vars.healthURL }}
+      expectStatus: "200"

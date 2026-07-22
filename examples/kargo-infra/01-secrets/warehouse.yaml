@@ -1,0 +1,14 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: secret-defs
+  namespace: infra-secrets
+spec:
+  subscriptions:
+  # A commit to the declarative secret definitions produces Freight. Scoped to
+  # this example's path so unrelated commits don't trigger rotations.
+  - git:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      branch: main
+      includePaths:
+      - examples/kargo-infra/01-secrets/secret-defs

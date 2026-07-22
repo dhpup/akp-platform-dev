@@ -1,0 +1,124 @@
+# env/region progression + an isolated govcloud stage. GovCloud takes Freight
+# from staging (a parallel, independently gated track — not downstream of
+# commercial prod), is manual-only per ProjectConfig, and uses DISTINCT
+# credentials via a separate shared secret.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: infra-vm
+  annotations:
+    kargo.akuity.io/color: green
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: iac
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: terraform
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars
+          - name: healthURL
+            value: https://vm-dev-canary.internal/healthz
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-dev').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-dev').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: staging
+  namespace: infra-vm
+  annotations:
+    kargo.akuity.io/color: amber
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: iac
+    sources:
+      stages:
+      - dev
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: terraform
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars   # per-stage tfvars possible; reused here
+          - name: healthURL
+            value: https://vm-staging-canary.internal/healthz
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-staging').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-staging').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod
+  namespace: infra-vm
+  annotations:
+    kargo.akuity.io/color: red
+spec:
+  # Manual (ProjectConfig): a human approves this Freight before apply runs.
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: iac
+    sources:
+      stages:
+      - staging
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: terraform
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars
+          - name: healthURL
+            value: https://vm-prod-canary.internal/healthz
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-prod').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-prod').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: govcloud
+  namespace: infra-vm
+  annotations:
+    kargo.akuity.io/color: purple
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: iac
+    sources:
+      stages:
+      - staging
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: terraform
+          vars:
+          - name: tfvarsFile
+            value: dev.tfvars
+          - name: healthURL
+            value: https://vm-govcloud-canary.internal/healthz
+          # DISTINCT, isolated credentials.
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-govcloud').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-govcloud').secretAccessKey %}

@@ -1,0 +1,12 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: iac
+  namespace: infra-vm
+spec:
+  subscriptions:
+  - git:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      branch: main
+      includePaths:
+      - examples/kargo-infra/03-vm-terraform/iac

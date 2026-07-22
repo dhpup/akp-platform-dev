@@ -1,0 +1,31 @@
+# Trigger a Windows deploy/runbook via its HTTP API — the Octopus-style
+# replacement. Same stage-per-lifecycle model as the Terraform path; only this
+# step swaps in. The token is passed as config from a shared secret.
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: CustomPromotionStep
+metadata:
+  name: windows-runbook
+spec:
+  image: curlimages/curl:8.11.1
+  env:
+  - name: ENDPOINT
+    value: ${{ config.endpoint }}
+  - name: RUNBOOK
+    value: ${{ config.runbook }}
+  - name: PACKAGE
+    value: ${{ config.package }}
+  - name: TOKEN
+    value: ${{ config.token }}
+  command:
+  - sh
+  - -c
+  - |
+    set -eu
+    code=$(curl -sk -o /tmp/out -w '%{http_code}' \
+      -X POST "$ENDPOINT/runbooks/$RUNBOOK/run" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H 'Content-Type: application/json' \
+      -d "{\"package\":\"$PACKAGE\"}")
+    cat /tmp/out; echo
+    [ "$code" = "200" ] || [ "$code" = "202" ]
+  defaultTimeout: 10m

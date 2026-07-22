@@ -1,0 +1,12 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: es-desired-state
+  namespace: infra-elasticsearch
+spec:
+  subscriptions:
+  - git:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      branch: main
+      includePaths:
+      - examples/kargo-infra/02-elasticsearch/desired-state

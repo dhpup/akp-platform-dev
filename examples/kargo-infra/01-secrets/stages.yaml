@@ -1,0 +1,92 @@
+# dev -> staging -> prod. Each Stage passes its own region + secret path and
+# resolves its own scoped AWS credentials from a per-env shared secret. Same
+# reusable task everywhere (swap task name to `write-externalsecret` for the ESO
+# option). This is "parameterize per environment" with no copy-pasted logic.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: infra-secrets
+  annotations:
+    kargo.akuity.io/color: green
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: secret-defs
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: rotate-secret
+          vars:
+          - name: region
+            value: us-east-1
+          - name: secretId
+            value: dev/example-app/db-password
+          - name: accessKeyId
+            value: ${% sharedSecret('aws-rotation-dev').accessKeyId %}
+          - name: secretAccessKey
+            value: ${% sharedSecret('aws-rotation-dev').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: staging
+  namespace: infra-secrets
+  annotations:
+    kargo.akuity.io/color: amber
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: secret-defs
+    sources:
+      stages:
+      - dev
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: rotate-secret
+          vars:
+          - name: region
+            value: us-east-1
+          - name: secretId
+            value: staging/example-app/db-password
+          - name: accessKeyId
+            value: ${% sharedSecret('aws-rotation-staging').accessKeyId %}
+          - name: secretAccessKey
+            value: ${% sharedSecret('aws-rotation-staging').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod
+  namespace: infra-secrets
+  annotations:
+    kargo.akuity.io/color: red
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: secret-defs
+    sources:
+      stages:
+      - staging
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: rotate-secret
+          vars:
+          - name: region
+            value: us-west-2
+          - name: secretId
+            value: prod/example-app/db-password
+          - name: accessKeyId
+            value: ${% sharedSecret('aws-rotation-prod').accessKeyId %}
+          - name: secretAccessKey
+            value: ${% sharedSecret('aws-rotation-prod').secretAccessKey %}

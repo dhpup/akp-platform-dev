@@ -1,0 +1,23 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: infra-elasticsearch
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+# One policy entry per managed-cluster Stage. The dev cluster auto-promotes on a
+# desired-state commit (IaC trigger); prod clusters are manual (on-demand,
+# gated trigger). TODO(verify): ProjectConfig vs Project.spec location.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: infra-elasticsearch
+  namespace: infra-elasticsearch
+spec:
+  promotionPolicies:
+  - stage: es-cluster-dev
+    autoPromotionEnabled: true
+  - stage: es-cluster-prod-a
+    autoPromotionEnabled: false
+  - stage: es-cluster-prod-b
+    autoPromotionEnabled: false

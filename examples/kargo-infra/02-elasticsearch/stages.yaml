@@ -1,0 +1,106 @@
+# One Stage per managed cluster — each an independent lifecycle position with its
+# own endpoint, node count, and scoped credentials, all sharing the `scale-up`
+# task. No shared "run everywhere" stage; blast radius is one cluster per
+# promotion. The health gate lives inside the task (es-wait-green), so no
+# separate stage-level AnalysisTemplate is needed.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: es-cluster-dev
+  namespace: infra-elasticsearch
+  annotations:
+    kargo.akuity.io/color: green
+spec:
+  # Auto-promoted on a desired-state commit (IaC trigger) per ProjectConfig.
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: es-desired-state
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: scale-up
+          vars:
+          - name: esEndpoint
+            value: https://es-dev.internal:9200
+          - name: desiredNodes
+            value: "3"
+          - name: esUser
+            value: ${% sharedSecret('es-credentials-dev').username %}
+          - name: esPass
+            value: ${% sharedSecret('es-credentials-dev').password %}
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-dev').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-dev').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: es-cluster-prod-a
+  namespace: infra-elasticsearch
+  annotations:
+    kargo.akuity.io/color: red
+spec:
+  # Manual promotion (on-demand, gated trigger) — a human promotes; prod is never
+  # scaled automatically.
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: es-desired-state
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: scale-up
+          vars:
+          - name: esEndpoint
+            value: https://es-prod-a.internal:9200
+          - name: desiredNodes
+            value: "6"
+          - name: esUser
+            value: ${% sharedSecret('es-credentials-prod-a').username %}
+          - name: esPass
+            value: ${% sharedSecret('es-credentials-prod-a').password %}
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-prod').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-prod').secretAccessKey %}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: es-cluster-prod-b
+  namespace: infra-elasticsearch
+  annotations:
+    kargo.akuity.io/color: red
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: es-desired-state
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: scale-up
+          vars:
+          - name: esEndpoint
+            value: https://es-prod-b.internal:9200
+          - name: desiredNodes
+            value: "6"
+          - name: esUser
+            value: ${% sharedSecret('es-credentials-prod-b').username %}
+          - name: esPass
+            value: ${% sharedSecret('es-credentials-prod-b').password %}
+          - name: awsAccessKeyId
+            value: ${% sharedSecret('aws-tf-prod').accessKeyId %}
+          - name: awsSecretAccessKey
+            value: ${% sharedSecret('aws-tf-prod').secretAccessKey %}

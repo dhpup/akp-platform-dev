@@ -1,0 +1,87 @@
+# Scale-up + instance-replacement, composed from built-in tf-apply and the
+# shared es-settings / es-wait-green custom steps. Each managed cluster's Stage
+# supplies its own endpoint, node count, and scoped credentials. Every step is
+# small and named — the anti-monolith the customer wants off Rundeck.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: scale-up
+  namespace: infra-elasticsearch
+spec:
+  vars:
+  - name: esEndpoint
+  - name: desiredNodes
+  - name: esUser
+    value: ""
+  - name: esPass
+    value: ""
+  - name: awsAccessKeyId
+    value: ""
+  - name: awsSecretAccessKey
+    value: ""
+  # Optional: node to drain + decommission during a replacement (empty = scale
+  # up only).
+  - name: oldNodeName
+    value: ""
+  steps:
+  # Bring the terraform config into the step workspace.
+  - uses: git-clone
+    config:
+      repoURL: https://github.com/example-org/akp-platform-dev.git
+      checkout:
+      - branch: main
+        path: ./src
+
+  # 1) PROVISION the new node(s) via Terraform (built-in step — no runner).
+  - as: provision
+    uses: tf-apply
+    config:
+      dir: ./src/examples/kargo-infra/02-elasticsearch/iac
+      vars:
+      - name: node_count
+        value: ${{ vars.desiredNodes }}
+      env:
+      - name: AWS_ACCESS_KEY_ID
+        value: ${{ vars.awsAccessKeyId }}
+      - name: AWS_SECRET_ACCESS_KEY
+        value: ${{ vars.awsSecretAccessKey }}
+
+  # 2) RE-ENABLE shard allocation so shards spread onto the new node.
+  - as: enable-allocation
+    uses: es-settings
+    config:
+      endpoint: ${{ vars.esEndpoint }}
+      username: ${{ vars.esUser }}
+      password: ${{ vars.esPass }}
+      body: '{"persistent":{"cluster.routing.allocation.enable":"all"}}'
+
+  # 3) GATE: block until green + no relocating shards. The promotion literally
+  #    cannot proceed until the cluster is healthy; a timeout fails the step and
+  #    stays red/inspectable in the Kargo UI. This is the point of the example.
+  - as: wait-green
+    uses: es-wait-green
+    config:
+      endpoint: ${{ vars.esEndpoint }}
+      username: ${{ vars.esUser }}
+      password: ${{ vars.esPass }}
+      timeout: 5m
+
+  # 4) OPTIONAL replacement: exclude the old node, wait green again, then it is
+  #    safe to decommission it (scale the module down / destroy that node in a
+  #    follow-up tf-apply). Runs only when oldNodeName is set.
+  - as: exclude-old-node
+    uses: es-settings
+    if: ${{ vars.oldNodeName != "" }}   # TODO(verify): step-level `if` on your version
+    config:
+      endpoint: ${{ vars.esEndpoint }}
+      username: ${{ vars.esUser }}
+      password: ${{ vars.esPass }}
+      body: '{"persistent":{"cluster.routing.allocation.exclude._name":"${{ vars.oldNodeName }}"}}'
+  - as: wait-green-after-drain
+    uses: es-wait-green
+    if: ${{ vars.oldNodeName != "" }}
+    config:
+      endpoint: ${{ vars.esEndpoint }}
+      username: ${{ vars.esUser }}
+      password: ${{ vars.esPass }}
+      timeout: 10m

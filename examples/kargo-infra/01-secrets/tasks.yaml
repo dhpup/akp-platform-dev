@@ -1,0 +1,36 @@
+# Option (a), custom-step version. Two library steps compose the rotation:
+# aws-secret-rotate (generate + put-secret-value) then aws-secret-verify
+# (read-back the live AWSCURRENT version). No http proxy, no SigV4 hand-rolling —
+# the aws-cli image does the signed calls with scoped, per-stage credentials.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: rotate-secret
+  namespace: infra-secrets
+spec:
+  vars:
+  - name: region
+  - name: secretId
+  # Credentials resolved per-stage from a shared secret and passed in (see
+  # stages.yaml). Defaults empty so a misconfigured stage fails loudly.
+  - name: accessKeyId
+    value: ""
+  - name: secretAccessKey
+    value: ""
+  steps:
+  - as: rotate
+    uses: aws-secret-rotate
+    config:
+      region: ${{ vars.region }}
+      secretId: ${{ vars.secretId }}
+      accessKeyId: ${{ vars.accessKeyId }}
+      secretAccessKey: ${{ vars.secretAccessKey }}
+  # Gate: the stage is only healthy once the version we just wrote is live.
+  - as: verify
+    uses: aws-secret-verify
+    config:
+      region: ${{ vars.region }}
+      secretId: ${{ vars.secretId }}
+      accessKeyId: ${{ vars.accessKeyId }}
+      secretAccessKey: ${{ vars.secretAccessKey }}
+      expectedVersionId: ${{ task.outputs['rotate'].versionId }}
